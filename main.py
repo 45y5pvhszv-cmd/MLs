@@ -145,33 +145,41 @@ def load_font(size: int, bold: bool = False):
 
 
 def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertical: bool) -> None:
-    # 720p-class graphics reduce peak memory in the small Railway container.
+    """Create bold, original sports-social graphics without unlicensed team marks."""
     width, height = (720, 1280) if vertical else (1280, 720)
-    image = Image.new("RGB", (width, height), "#071426")
+    image = Image.new("RGB", (width, height), "#06101f")
     draw = ImageDraw.Draw(image)
-    margin = int(width * 0.07)
-    title_font = load_font(int(width * (0.062 if vertical else 0.047)), True)
-    sub_font = load_font(int(width * 0.025), False)
+    # Neon diagonal bands and stadium-style light panels are original graphic assets.
+    draw.polygon([(0, 0), (int(width*.68), 0), (int(width*.48), int(height*.18)), (0, int(height*.28))], fill="#0b2840")
+    draw.polygon([(width, int(height*.45)), (width, height), (int(width*.58), height), (int(width*.8), int(height*.74))], fill="#0b263b")
+    draw.rectangle((0, 0, int(width*.018), height), fill="#31e0b1")
+    margin = int(width * 0.065)
+    title_font = load_font(int(width * (0.066 if vertical else 0.052)), True)
+    sub_font = load_font(int(width * 0.024), True)
     team_font = load_font(int(width * (0.027 if vertical else 0.022)), True)
-    score_font = load_font(int(width * (0.038 if vertical else 0.032)), True)
-    small_font = load_font(int(width * 0.018), False)
-    draw.rounded_rectangle((margin, margin, width-margin, height-margin), radius=32, outline="#31C7A8", width=5)
-    draw.text((margin*1.4, margin*1.35), "MLS DAILY RECAP", font=title_font, fill="#FFFFFF")
-    draw.text((margin*1.4, margin*1.35 + int(width*.08)), report_date, font=sub_font, fill="#31C7A8")
-    y = int(height * (0.24 if vertical else 0.28))
-    max_rows = min(len(matches), 8 if vertical else 6)
-    row_h = int(height * (0.075 if vertical else 0.095))
-    for match in matches[:max_rows]:
-        draw.rounded_rectangle((margin, y, width-margin, y+row_h-int(height*.012)), radius=18, fill="#10263E")
-        left = margin + int(width*.025)
-        draw.text((left, y+int(row_h*.12)), str(match.get("home_team","Home"))[:24], font=team_font, fill="#FFFFFF")
-        draw.text((left, y+int(row_h*.55)), str(match.get("away_team","Away"))[:24], font=team_font, fill="#A9BCD0")
+    score_font = load_font(int(width * (0.043 if vertical else 0.036)), True)
+    small_font = load_font(int(width * 0.017), True)
+    draw.text((margin, int(height*.055)), "THE MLS", font=title_font, fill="#FFFFFF", stroke_width=1, stroke_fill="#31e0b1")
+    draw.text((margin, int(height*.055)+int(width*.075)), "FINAL WHISTLE  /  " + report_date, font=sub_font, fill="#31e0b1")
+    # Accent divider gives the card a sports broadcast hierarchy.
+    draw.rounded_rectangle((margin, int(height*.18), width-margin, int(height*.187)), radius=5, fill="#31e0b1")
+    y = int(height * (0.225 if vertical else 0.235))
+    max_rows = min(len(matches), 8 if vertical else 5)
+    row_h = int(height * (0.078 if vertical else 0.12))
+    for idx, match in enumerate(matches[:max_rows], start=1):
+        bottom = y + row_h - int(height*.012)
+        draw.rounded_rectangle((margin, y, width-margin, bottom), radius=22, fill="#10283e", outline="#24475d", width=2)
+        draw.rounded_rectangle((margin, y, margin+int(width*.012), bottom), radius=5, fill="#31e0b1" if idx == 1 else "#426b83")
+        left = margin + int(width*.032)
+        draw.text((left, y+int(row_h*.13)), str(match.get("home_team","Home"))[:24], font=team_font, fill="#FFFFFF")
+        draw.text((left, y+int(row_h*.56)), str(match.get("away_team","Away"))[:24], font=team_font, fill="#a8bdce")
         score = f'{match.get("home_score","-")}  -  {match.get("away_score","-")}'
         box = draw.textbbox((0,0), score, font=score_font)
-        draw.text((width-margin-int(width*.03)-(box[2]-box[0]), y+int(row_h*.28)), score, font=score_font, fill="#31C7A8")
+        draw.text((width-margin-int(width*.035)-(box[2]-box[0]), y+int(row_h*.31)), score, font=score_font, fill="#31e0b1")
         y += row_h
-    footer_y = height - margin*2
-    draw.text((margin*1.4, footer_y), "Scores only • No unlicensed match footage", font=small_font, fill="#A9BCD0")
+    footer_y = height - margin*1.8
+    draw.text((margin, footer_y), "SCORES. STORIES. SOCCER.", font=small_font, fill="#FFFFFF")
+    draw.text((margin, footer_y+int(height*.025)), "Independent MLS coverage  •  Verified final scores", font=small_font, fill="#a8bdce")
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, quality=95)
 
