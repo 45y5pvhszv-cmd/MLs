@@ -363,7 +363,7 @@ def render_scene_sequence(parts: list[tuple[Path, Path]], output: Path, workdir:
         render_mp4(image_path, audio_path, scene_path)
         scene_files.append(scene_path)
     concat_file = workdir / f"concat_{output.stem}.txt"
-    concat_file.write_text("".join(f"file '{p.as_posix()}'\\n" for p in scene_files), encoding="utf-8")
+    concat_file.write_text("".join(f"file '{p.as_posix()}'\n" for p in scene_files), encoding="utf-8")
     result = subprocess.run([ffmpeg,"-y","-f","concat","-safe","0","-i",str(concat_file),"-c","copy","-movflags","+faststart",str(output)],capture_output=True,text=True,timeout=300)
     if result.returncode:
         raise RuntimeError("FFmpeg scene assembly failed: " + result.stderr[-1200:])
