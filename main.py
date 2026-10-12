@@ -186,7 +186,8 @@ def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
         ffmpeg, "-y", "-loop", "1", "-framerate", "25", "-i", str(image_path),
         "-i", str(audio_path), "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-        "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "96k", "-pix_fmt", "yuv420p",
+        "-threads", "2", "-filter_threads", "1",
         "-shortest", "-movflags", "+faststart", str(output_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
