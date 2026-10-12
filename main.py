@@ -52,7 +52,18 @@ def api_get(path: str, params: dict[str, str] | None = None) -> dict:
 
 
 def fetch_yesterdays_results() -> list[dict]:
-    payload = api_get("results/yesterday", {"country": COUNTRY, "limit": "1000"})
+    local_now = datetime.now(ZoneInfo(TIMEZONE))
+    report_date = os.getenv("REPORT_DATE", (local_now.date() - timedelta(days=1)).isoformat())
+    payload = api_get(
+        "matches",
+        {
+            "country": COUNTRY,
+            "date_from": report_date,
+            "date_to": report_date,
+            "status": "finished",
+            "limit": "1000",
+        },
+    )
     data = payload.get("data", [])
     if isinstance(data, dict):
         data = [data]
@@ -60,8 +71,10 @@ def fetch_yesterdays_results() -> list[dict]:
         raise ProviderError("Unexpected results format from Football Soccer API.")
     return [
         match for match in data
-        if LEAGUE_NAME in str(match.get("league_name", "")).casefold()
-        and "mls" in str(match.get("league_name", "")).casefold()
+        if (
+            "mls" in str(match.get("league_name", "")).casefold()
+            or "major league soccer" in str(match.get("league_name", "")).casefold()
+        )
     ]
 
 
