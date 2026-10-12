@@ -144,7 +144,8 @@ def load_font(size: int, bold: bool = False):
 
 
 def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertical: bool) -> None:
-    width, height = (1080, 1920) if vertical else (1920, 1080)
+    # 720p-class graphics reduce peak memory in the small Railway container.
+    width, height = (720, 1280) if vertical else (1280, 720)
     image = Image.new("RGB", (width, height), "#071426")
     draw = ImageDraw.Draw(image)
     margin = int(width * 0.07)
