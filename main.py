@@ -1,19 +1,24 @@
 """MLS daily recap preparation using Football Soccer API's free results endpoint.
 
-This stage creates script drafts only. It does not generate audio/video or upload.
+This stage creates score-based narration and original graphic video drafts. It does not upload.
 The free tier supplies recent results; goal-event details and standings may require
 a higher plan, so the script never invents scorers or current table positions.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+import edge_tts
+import imageio_ffmpeg
+from PIL import Image, ImageDraw, ImageFont
 
 API_BASE = "https://api.footballsoccerapi.com/v1"
 TIMEZONE = os.getenv("REPORT_TIMEZONE", "America/Chicago")
@@ -126,6 +131,89 @@ def create_script(matches: list[dict], report_date: str) -> dict:
     }
 
 
+
+def load_font(size: int, bold: bool = False):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertical: bool) -> None:
+    width, height = (1080, 1920) if vertical else (1920, 1080)
+    image = Image.new("RGB", (width, height), "#071426")
+    draw = ImageDraw.Draw(image)
+    margin = int(width * 0.07)
+    title_font = load_font(int(width * (0.062 if vertical else 0.047)), True)
+    sub_font = load_font(int(width * 0.025), False)
+    team_font = load_font(int(width * (0.027 if vertical else 0.022)), True)
+    score_font = load_font(int(width * (0.038 if vertical else 0.032)), True)
+    small_font = load_font(int(width * 0.018), False)
+    draw.rounded_rectangle((margin, margin, width-margin, height-margin), radius=32, outline="#31C7A8", width=5)
+    draw.text((margin*1.4, margin*1.35), "MLS DAILY RECAP", font=title_font, fill="#FFFFFF")
+    draw.text((margin*1.4, margin*1.35 + int(width*.08)), report_date, font=sub_font, fill="#31C7A8")
+    y = int(height * (0.24 if vertical else 0.28))
+    max_rows = min(len(matches), 8 if vertical else 6)
+    row_h = int(height * (0.075 if vertical else 0.095))
+    for match in matches[:max_rows]:
+        draw.rounded_rectangle((margin, y, width-margin, y+row_h-int(height*.012)), radius=18, fill="#10263E")
+        left = margin + int(width*.025)
+        draw.text((left, y+int(row_h*.12)), str(match.get("home_team","Home"))[:24], font=team_font, fill="#FFFFFF")
+        draw.text((left, y+int(row_h*.55)), str(match.get("away_team","Away"))[:24], font=team_font, fill="#A9BCD0")
+        score = f'{match.get("home_score","-")}  -  {match.get("away_score","-")}'
+        box = draw.textbbox((0,0), score, font=score_font)
+        draw.text((width-margin-int(width*.03)-(box[2]-box[0]), y+int(row_h*.28)), score, font=score_font, fill="#31C7A8")
+        y += row_h
+    footer_y = height - margin*2
+    draw.text((margin*1.4, footer_y), "Scores only • No unlicensed match footage", font=small_font, fill="#A9BCD0")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, quality=95)
+
+
+async def create_narration(text: str, path: Path) -> None:
+    voice = os.getenv("TTS_VOICE", "en-US-AndrewMultilingualNeural")
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(str(path))
+
+
+def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    cmd = [
+        ffmpeg, "-y", "-loop", "1", "-i", str(image_path), "-i", str(audio_path),
+        "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k",
+        "-pix_fmt", "yuv420p", "-shortest", "-movflags", "+faststart", str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if result.returncode:
+        raise RuntimeError("FFmpeg video render failed: " + result.stderr[-800:])
+
+
+def render_videos(draft: dict, output_dir: Path) -> list[str]:
+    if draft.get("status") != "draft_ready":
+        return []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    date = draft["date"]
+    assets = output_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    short_audio = assets / f"short_{date}.mp3"
+    long_audio = assets / f"long_{date}.mp3"
+    short_image = assets / f"short_{date}.jpg"
+    long_image = assets / f"long_{date}.jpg"
+    short_video = output_dir / f"mls_short_{date}.mp4"
+    long_video = output_dir / f"mls_recap_{date}.mp4"
+    asyncio.run(create_narration(draft["short_script"], short_audio))
+    asyncio.run(create_narration(draft["long_script"], long_audio))
+    render_scoreboard(draft["matches"], date, short_image, True)
+    render_scoreboard(draft["matches"], date, long_image, False)
+    render_mp4(short_image, short_audio, short_video)
+    render_mp4(long_image, long_audio, long_video)
+    return [str(short_video), str(long_video)]
+
+
 def main() -> int:
     # Provider endpoint returns the previous UTC day, so label the report in UTC.
     utc_yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
@@ -144,16 +232,27 @@ def main() -> int:
     draft["source"] = "Football Soccer API (free results endpoint)"
     draft["source_report_date"] = report_date
     draft["limitations"] = [
-        "Free endpoint results are for the previous UTC day; report date is America/Chicago.",
+        "Free endpoint results are for the previous UTC day; report date is UTC.",
         "Scorer event details and full standings are not claimed unless verified separately.",
-        "No audio/video was rendered and no YouTube upload was attempted.",
+        "Original scoreboard graphics only; no match footage or team logos are used.",
+        "YouTube upload is not configured and was not attempted.",
     ]
     output_path = OUTPUT_DIR / f"mls_recap_{report_date}.json"
     output_path.write_text(json.dumps(draft, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"MLS results returned: {len(summaries)}")
     print(f"Completed matches: {sum(1 for m in summaries if m['finished'])}")
     print(f"Draft output: {output_path}")
-    print("No audio/video was rendered and no YouTube upload was attempted.")
+    if draft.get("status") == "draft_ready" and os.getenv("ENABLE_VIDEO_RENDER", "true").casefold() == "true":
+        try:
+            videos = render_videos(draft, OUTPUT_DIR)
+            for video in videos:
+                print(f"Rendered video: {video}")
+        except Exception as exc:
+            print(f"VIDEO RENDER FAILED: {exc}", file=sys.stderr)
+            return 3
+    else:
+        print("Video render skipped (no completed matches or ENABLE_VIDEO_RENDER=false).")
+    print("YouTube upload is not configured; nothing was published.")
     return 0
 
 
