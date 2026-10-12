@@ -4,16 +4,13 @@ A starter project for an automated, faceless MLS YouTube channel.
 
 ## Current status
 
-This repository is a safe starter scaffold. It does **not** publish videos yet. Public publishing stays disabled until data access, narration/video generation, and YouTube OAuth are configured and tested.
+The first pipeline stage can retrieve MLS match data and create a JSON file with a template-based recap script. It is intentionally fail-closed when no provider key is configured. **Audio, video rendering, and YouTube uploading are not implemented yet.**
 
-## Planned pipeline
+## Data provider setup
 
-1. Fetch completed MLS fixtures, scores, and goal scorers from a licensed data provider.
-2. Validate results and standings; stop if data is missing or inconsistent.
-3. Generate original narration and a short-form and long-form script.
-4. Render videos using original graphics and properly licensed audio/assets.
-5. Upload as private/unlisted test videos first.
-6. Enable scheduled public publishing only after end-to-end verification.
+This version uses API-Football (API-Sports) for fixtures, goal events, and standings. Its current public pricing page lists a free tier with 100 requests/day and includes fixtures, standings, and events; check current coverage, terms, and commercial-use permissions before relying on it: https://www.api-football.com/pricing/ and https://www.api-football.com/coverage.
+
+In Railway, add the provider key as a service variable named `MLS_DATA_API_KEY`. Never put API keys in GitHub or send them in chat. Defaults are MLS league ID 253, current calendar year as season, and America/Chicago as the report timezone. These can be overridden with `MLS_LEAGUE_ID`, `MLS_SEASON`, and `REPORT_TIMEZONE`.
 
 ## Run locally
 
@@ -24,20 +21,19 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-By default, this only prints a status message. It does not access accounts, spend money, or publish content.
+Set `REPORT_DATE=YYYY-MM-DD` to test a specific date. Output is written to `output/mls_recap_YYYY-MM-DD.json`. The program stops safely if the data key is missing or the provider returns an error.
 
-## Required configuration later
+## Still to build
 
-Use Railway environment variables for secrets. Never commit API keys or OAuth tokens.
-
-- `MLS_DATA_API_KEY`: licensed soccer-data provider key
-- `OPENAI_API_KEY`: narration/script generation (optional provider)
-- `YOUTUBE_CLIENT_SECRETS_JSON` and OAuth token setup: YouTube upload authorization
-- `PUBLISH_MODE`: keep `disabled` until verified; then use private/unlisted testing before public
+1. Validate provider coverage and returned data in a real run.
+2. Generate original, substantive commentary and verified standings context.
+3. Add licensed AI narration and render vertical Shorts plus a longer recap with original graphics.
+4. Add duplicate protection, retry logic, logging, and alerts.
+5. Authorize YouTube uploads and begin with private test uploads. Unverified YouTube API projects may be restricted to private uploads until they pass Google's audit: https://developers.google.com/youtube/v3/docs/videos/.
+6. Enable a Railway schedule only after end-to-end tests pass.
 
 ## Important
 
-- Verify provider coverage for MLS, goal-scorer detail, standings, and permitted usage.
-- Do not use unlicensed match footage, music, or league/team graphics.
-- Keep commentary original and substantive; automated repetition or simple data readouts may not qualify for monetization.
-- Add retries, duplicate-upload protection, logging, and alerts before production.
+- Do not use unlicensed match footage, music, logos, or other protected assets.
+- Keep commentary original and substantive. Repetitive or minimally transformed automated content may not qualify for monetization.
+- Public publishing remains disabled. This code does not create audio/video and does not upload anything.
