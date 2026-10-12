@@ -234,10 +234,22 @@ def main() -> int:
     print(f"MLS recap preparation | report date: {report_date} | source: Football Soccer API")
 
     try:
-        results = fetch_yesterdays_results()
+        provider_results = fetch_yesterdays_results()
     except (ProviderError, requests.RequestException, ValueError) as exc:
         print(f"SAFE STOP: {exc}", file=sys.stderr)
         return 2
+
+    # The provider's "yesterday" endpoint can include matches from more than
+    # one calendar date. Keep only matches whose kickoff date matches the
+    # report date, so yesterday's games are not mixed into today's recap.
+    results = [
+        match for match in provider_results
+        if str(match.get("kickoff_date", "")).strip()[:10] == report_date
+    ]
+    skipped = len(provider_results) - len(results)
+    print(f"Provider MLS matches before date filter: {len(provider_results)}")
+    print(f"Matches for report date {report_date}: {len(results)}")
+    print(f"Matches excluded from other dates: {skipped}")
 
     summaries = [build_match_summary(match) for match in results]
     draft = create_script(summaries, report_date)
