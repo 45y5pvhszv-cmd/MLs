@@ -1,1 +1,1 @@
-# Minimal starter; add vetted dependencies as the pipeline is implemented.
+requests>=2.32.0,<3.0.0
