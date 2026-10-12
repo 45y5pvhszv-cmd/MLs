@@ -308,26 +308,100 @@ def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
         )
 
 
+def make_title_card(path: Path, report_date: str, headline: str, vertical: bool) -> None:
+    width, height = (720, 1280) if vertical else (1280, 720)
+    image = Image.new("RGB", (width, height), "#06101f")
+    draw = ImageDraw.Draw(image)
+    draw.polygon([(0,0),(width,0),(int(width*.58),height),(0,int(height*.78))], fill="#102f49")
+    draw.polygon([(width,0),(width,height),(int(width*.45),height)], fill="#0b263b")
+    draw.rectangle((0,0,int(width*.018),height), fill="#31e0b1")
+    margin = int(width*.07)
+    draw.text((margin,int(height*.17)), "MLS", font=load_font(int(width*.1),True), fill="#fff", stroke_width=2, stroke_fill="#31e0b1")
+    draw.text((margin,int(height*.31)), "FINAL WHISTLE", font=load_font(int(width*.045),True), fill="#31e0b1")
+    # Wrap headline to fit either aspect ratio.
+    words = headline.split()
+    lines, current = [], ""
+    font = load_font(int(width*(.052 if vertical else .06)), True)
+    for word in words:
+        candidate = (current + " " + word).strip()
+        if draw.textbbox((0,0), candidate, font=font)[2] > width - margin*2 and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    y = int(height*.43)
+    for line in lines[:4]:
+        draw.text((margin,y), line, font=font, fill="#FFFFFF")
+        y += int(height*.075)
+    draw.text((margin,int(height*.82)), report_date + "  /  SCORES • STORIES • SOCCER", font=load_font(int(width*.021),True), fill="#b9cddd")
+    path.parent.mkdir(parents=True,exist_ok=True)
+    image.save(path,quality=95)
+
+
+def render_scene_sequence(parts: list[tuple[Path, Path]], output: Path, workdir: Path) -> None:
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    scene_files = []
+    for idx, (image_path, audio_path) in enumerate(parts):
+        scene_path = workdir / f"scene_{idx:02d}_{output.stem}.mp4"
+        render_mp4(image_path, audio_path, scene_path)
+        scene_files.append(scene_path)
+    concat_file = workdir / f"concat_{output.stem}.txt"
+    concat_file.write_text("".join(f"file '{p.as_posix()}'\\n" for p in scene_files), encoding="utf-8")
+    result = subprocess.run([ffmpeg,"-y","-f","concat","-safe","0","-i",str(concat_file),"-c","copy","-movflags","+faststart",str(output)],capture_output=True,text=True,timeout=300)
+    if result.returncode:
+        raise RuntimeError("FFmpeg scene assembly failed: " + result.stderr[-1200:])
+    for p in scene_files:
+        p.unlink(missing_ok=True)
+    concat_file.unlink(missing_ok=True)
+
+
 def render_videos(draft: dict, output_dir: Path) -> list[str]:
     if draft.get("status") != "draft_ready":
         return []
     output_dir.mkdir(parents=True, exist_ok=True)
     date = draft["date"]
-    assets = output_dir / "assets"
+    assets = output_dir / "assets" / date
     assets.mkdir(parents=True, exist_ok=True)
-    short_audio = assets / f"short_{date}.mp3"
-    long_audio = assets / f"long_{date}.mp3"
-    short_image = assets / f"short_{date}.jpg"
-    long_image = assets / f"long_{date}.jpg"
-    short_video = output_dir / f"mls_short_{date}_v3.mp4"
-    long_video = output_dir / f"mls_recap_{date}_v3.mp4"
-    asyncio.run(create_narration(draft["short_script"], short_audio))
-    asyncio.run(create_narration(draft["long_script"], long_audio))
-    render_scoreboard(draft["matches"], date, short_image, True)
-    render_scoreboard(draft["matches"], date, long_image, False)
-    render_mp4(short_image, short_audio, short_video)
-    render_mp4(long_image, long_audio, long_video)
-    return [str(short_video), str(long_video)]
+    short_video = output_dir / f"mls_short_{date}_v4.mp4"
+    long_video = output_dir / f"mls_recap_{date}_v4.mp4"
+    matches = draft["matches"]
+    # Shorts stay focused: lead with the closest games and cap the rundown at four.
+    ranked = sorted(matches, key=lambda m: abs(int(m.get("home_score") or 0)-int(m.get("away_score") or 0)))
+    short_matches = ranked[:4]
+    short_parts, long_parts = [], []
+
+    def add_scene(parts, tag, headline, narration, match, vertical):
+        image_path = assets / f"{tag}.jpg"
+        audio_path = assets / f"{tag}.mp3"
+        make_title_card(image_path,date,headline,vertical) if match is None else render_scoreboard([match],date,image_path,vertical)
+        asyncio.run(create_narration(narration,audio_path))
+        parts.append((image_path,audio_path))
+
+    add_scene(short_parts,"short_intro","THE RESULTS YOU NEED",f"MLS Final Whistle! Here are four results to know from {date}.",None,True)
+    for i,m in enumerate(short_matches,1):
+        score=f'{m["home_team"]} {m["home_score"]}, {m["away_team"]} {m["away_score"]}.'
+        add_scene(short_parts,f"short_match_{i}",f'{m["home_team"]} vs {m["away_team"]}',score,m,True)
+    add_scene(short_parts,"short_outro","YOUR TAKE?", "Which result surprised you most? Tell us below and follow for the next MLS roundup.",None,True)
+
+    add_scene(long_parts,"long_intro","THE FULL MLS RUNDOWN",f"Welcome to MLS Final Whistle for {date}. We are breaking down the final scores one match at a time.",None,False)
+    for i,m in enumerate(matches,1):
+        gap=abs(int(m.get("home_score") or 0)-int(m.get("away_score") or 0))
+        if gap == 0:
+            angle="These sides finished level, so neither could find a winning margin."
+        elif gap == 1:
+            angle="A one-goal margin makes this one of the tighter results on the slate."
+        elif gap >= 3:
+            angle="That is a decisive scoreline by a three-goal or greater margin."
+        else:
+            angle="The final score gives us the result, without guessing at events we cannot verify."
+        narration=f"Match {i}. {m['home_team']} {m['home_score']}, {m['away_team']} {m['away_score']}. {angle}"
+        add_scene(long_parts,f"long_match_{i}",f'{m["home_team"]} vs {m["away_team"]}',narration,m,False)
+    add_scene(long_parts,"long_outro","JOIN THE CONVERSATION","Which result will matter most in the playoff race? Share your take, and subscribe for the next MLS Final Whistle.",None,False)
+    render_scene_sequence(short_parts,short_video,assets)
+    render_scene_sequence(long_parts,long_video,assets)
+    return [str(short_video),str(long_video)]
 
 
 def main(report_date_override: str | None = None) -> int:
