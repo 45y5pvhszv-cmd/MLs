@@ -57,9 +57,9 @@ def api_get(path: str, params: dict[str, str] | None = None) -> dict:
 
 
 def fetch_yesterdays_results() -> list[dict]:
-    # This endpoint is explicitly available on the free plan and uses the
-    # provider's yesterday-in-UTC window. Do not query older dates on free tier.
-    payload = api_get("results/yesterday", {"country": COUNTRY, "limit": "1000"})
+    # The free "today" endpoint can include recent results across UTC dates.
+    # We filter each kickoff into the user's configured report timezone below.
+    payload = api_get("results/today", {"country": COUNTRY, "limit": "1000"})
     data = payload.get("data", [])
     if isinstance(data, dict):
         data = [data]
@@ -77,6 +77,7 @@ def build_match_summary(match: dict) -> dict:
     return {
         "match_id": match.get("match_id"),
         "date": match.get("kickoff_date"),
+        "kickoff_utc": match.get("kickoff_utc"),
         "status": match.get("match_status"),
         "finished": match.get("match_status") in {"finished", "finished_after_extra_time"},
         "league": match.get("league_name"),
@@ -227,9 +228,9 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
 
 
 def main() -> int:
-    # Provider endpoint returns the previous UTC day, so label the report in UTC.
-    utc_yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
-    report_date = os.getenv("REPORT_DATE", utc_yesterday)
+    # The recap follows the configured local calendar date, not UTC midnight.
+    local_today = datetime.now(ZoneInfo(TIMEZONE)).date().isoformat()
+    report_date = os.getenv("REPORT_DATE", local_today)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"MLS recap preparation | report date: {report_date} | source: Football Soccer API")
 
@@ -239,13 +240,24 @@ def main() -> int:
         print(f"SAFE STOP: {exc}", file=sys.stderr)
         return 2
 
-    # The provider's "yesterday" endpoint can include matches from more than
-    # one calendar date. Keep only matches whose kickoff date matches the
-    # report date, so yesterday's games are not mixed into today's recap.
-    results = [
-        match for match in provider_results
-        if str(match.get("kickoff_date", "")).strip()[:10] == report_date
-    ]
+    # Provider kickoff_date is a UTC date, which can differ from the date fans
+    # see locally. Use kickoff_utc as the authority and convert it to the
+    # configured report timezone before selecting the day's games.
+    report_day = datetime.fromisoformat(report_date).date()
+    results = []
+    for match in provider_results:
+        kickoff = match.get("kickoff_utc")
+        try:
+            kickoff_timestamp = float(kickoff)
+            local_kickoff_day = datetime.fromtimestamp(
+                kickoff_timestamp, timezone.utc
+            ).astimezone(ZoneInfo(TIMEZONE)).date()
+        except (TypeError, ValueError, OSError, OverflowError):
+            # Fail closed rather than accidentally mix in a match with an
+            # unknown kickoff date.
+            continue
+        if local_kickoff_day == report_day:
+            results.append(match)
     skipped = len(provider_results) - len(results)
     print(f"Provider MLS matches before date filter: {len(provider_results)}")
     print(f"Matches for report date {report_date}: {len(results)}")
@@ -256,7 +268,7 @@ def main() -> int:
     draft["source"] = "Football Soccer API (free results endpoint)"
     draft["source_report_date"] = report_date
     draft["limitations"] = [
-        "Free endpoint results are for the previous UTC day; report date is UTC.",
+        "Matches are filtered by kickoff timestamp in the configured report timezone.",
         "Scorer event details and full standings are not claimed unless verified separately.",
         "Original scoreboard graphics only; no match footage or team logos are used.",
         "YouTube upload is not configured and was not attempted.",
