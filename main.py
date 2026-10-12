@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 import edge_tts
+from gtts import gTTS
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
@@ -270,9 +271,23 @@ def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertica
 
 
 async def create_narration(text: str, path: Path) -> None:
+    """Try Edge neural narration, then fall back to Google TTS if Edge blocks the host."""
     voice = os.getenv("TTS_VOICE", "en-US-AndrewMultilingualNeural")
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(str(path))
+    try:
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(str(path))
+        if path.exists() and path.stat().st_size > 1000:
+            return
+    except Exception as exc:
+        print(f"Primary TTS unavailable; trying fallback voice: {exc}")
+    try:
+        await asyncio.to_thread(lambda: gTTS(text=text, lang="en", slow=False).save(str(path)))
+        if path.exists() and path.stat().st_size > 1000:
+            print(f"Fallback narration generated: {path.name}")
+            return
+    except Exception as exc:
+        raise RuntimeError(f"Both narration providers failed: {exc}") from exc
+    raise RuntimeError("Narration file was not created or was unexpectedly small.")
 
 
 def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
