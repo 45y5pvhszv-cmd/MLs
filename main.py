@@ -75,6 +75,52 @@ def fetch_yesterdays_results() -> list[dict]:
         if str(match.get("league_name", "")).strip().casefold() in official_mls_names
     ]
 
+
+def fetch_espn_results(report_date: str) -> list[dict]:
+    """Fetch MLS scoreboard data from ESPN's public scoreboard endpoint."""
+    day = report_date.replace("-", "")
+    response = requests.get(
+        "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
+        params={"dates": day, "limit": "100"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = []
+    for event in payload.get("events", []):
+        competitions = event.get("competitions") or []
+        if not competitions:
+            continue
+        competition = competitions[0]
+        competitors = competition.get("competitors") or []
+        home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+        away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        status = ((event.get("status") or {}).get("type") or {}).get("name", "")
+        completed = bool(((event.get("status") or {}).get("type") or {}).get("completed"))
+        date_value = event.get("date", "")
+        try:
+            kickoff_dt = datetime.fromisoformat(date_value.replace("Z", "+00:00"))
+            kickoff_ts = kickoff_dt.timestamp()
+        except (ValueError, TypeError):
+            continue
+        results.append({
+            "match_id": event.get("id"),
+            "kickoff_date": date_value[:10],
+            "kickoff_utc": kickoff_ts,
+            "match_status": "finished" if completed else status.casefold(),
+            "league_name": "MLS",
+            "home_team_name": (home.get("team") or {}).get("displayName", "Home team"),
+            "away_team_name": (away.get("team") or {}).get("displayName", "Away team"),
+            "home_goals": home.get("score"),
+            "away_goals": away.get("score"),
+            "source": "ESPN public scoreboard",
+        })
+    return results
+
+
 def build_match_summary(match: dict) -> dict:
     return {
         "match_id": match.get("match_id"),
@@ -258,8 +304,22 @@ def main() -> int:
     print(f"MLS recap preparation | report date: {report_date} | source: Football Soccer API")
 
     try:
-        provider_results = fetch_yesterdays_results()
-    except (ProviderError, requests.RequestException, ValueError) as exc:
+        provider_results = fetch_espn_results(report_date)
+        source_name = "ESPN public MLS scoreboard"
+        print(f"ESPN scoreboard matches for requested date: {len(provider_results)}")
+        if not provider_results:
+            print("ESPN returned no events; checking configured results provider.")
+            provider_results = fetch_yesterdays_results()
+            source_name = "Football Soccer API (fallback)"
+    except (requests.RequestException, ValueError, KeyError) as espn_exc:
+        print(f"ESPN scoreboard unavailable: {espn_exc}")
+        try:
+            provider_results = fetch_yesterdays_results()
+            source_name = "Football Soccer API (fallback)"
+        except (ProviderError, requests.RequestException, ValueError) as exc:
+            print(f"SAFE STOP: ESPN and fallback provider failed: {exc}", file=sys.stderr)
+            return 2
+    except ProviderError as exc:
         print(f"SAFE STOP: {exc}", file=sys.stderr)
         return 2
 
@@ -288,7 +348,7 @@ def main() -> int:
 
     summaries = [build_match_summary(match) for match in results]
     draft = create_script(summaries, report_date)
-    draft["source"] = "Football Soccer API (free results endpoint)"
+    draft["source"] = source_name
     draft["source_report_date"] = report_date
     draft["limitations"] = [
         "Matches are filtered by kickoff timestamp in the configured report timezone.",
