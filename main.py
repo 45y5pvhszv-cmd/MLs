@@ -78,17 +78,25 @@ def fetch_yesterdays_results() -> list[dict]:
 
 def fetch_espn_results(report_date: str) -> list[dict]:
     """Fetch MLS scoreboard data from ESPN's public scoreboard endpoint."""
-    day = report_date.replace("-", "")
-    response = requests.get(
-        "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
-        params={"dates": day, "limit": "100"},
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=20,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    # MLS kickoff times span UTC dates. Query the previous, requested, and
+    # following UTC dates, then let the caller filter by local kickoff date.
+    base_day = datetime.fromisoformat(report_date).date()
+    events_by_id = {}
+    for offset in (-1, 0, 1):
+        day = (base_day + timedelta(days=offset)).strftime("%Y%m%d")
+        response = requests.get(
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
+            params={"dates": day, "limit": "100"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        for event in payload.get("events", []):
+            if event.get("id"):
+                events_by_id[event["id"]] = event
     results = []
-    for event in payload.get("events", []):
+    for event in events_by_id.values():
         competitions = event.get("competitions") or []
         if not competitions:
             continue
@@ -301,7 +309,7 @@ def main() -> int:
     local_today = datetime.now(ZoneInfo(TIMEZONE)).date().isoformat()
     report_date = os.getenv("REPORT_DATE", local_today)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"MLS recap preparation | report date: {report_date} | source: Football Soccer API")
+    print(f"MLS recap preparation | report date: {report_date} | source: ESPN scoreboard with fallback")
 
     try:
         provider_results = fetch_espn_results(report_date)
