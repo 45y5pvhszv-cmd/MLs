@@ -52,18 +52,9 @@ def api_get(path: str, params: dict[str, str] | None = None) -> dict:
 
 
 def fetch_yesterdays_results() -> list[dict]:
-    local_now = datetime.now(ZoneInfo(TIMEZONE))
-    report_date = os.getenv("REPORT_DATE", (local_now.date() - timedelta(days=1)).isoformat())
-    payload = api_get(
-        "matches",
-        {
-            "country": COUNTRY,
-            "date_from": report_date,
-            "date_to": report_date,
-            "status": "finished",
-            "limit": "1000",
-        },
-    )
+    # This endpoint is explicitly available on the free plan and uses the
+    # provider's yesterday-in-UTC window. Do not query older dates on free tier.
+    payload = api_get("results/yesterday", {"country": COUNTRY, "limit": "1000"})
     data = payload.get("data", [])
     if isinstance(data, dict):
         data = [data]
@@ -76,7 +67,6 @@ def fetch_yesterdays_results() -> list[dict]:
             or "major league soccer" in str(match.get("league_name", "")).casefold()
         )
     ]
-
 
 def build_match_summary(match: dict) -> dict:
     return {
