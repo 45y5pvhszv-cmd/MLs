@@ -114,14 +114,17 @@ def create_script(matches: list[dict], report_date: str) -> dict:
         )
     match_text = " ".join(lines)
     short_script = (
-        f"Here is your MLS score recap for {report_date}. {match_text} "
-        "These are the final scores available from our data provider. Follow for more MLS updates."
+        f"MLS fans, here are the final scores for {report_date}. {match_text} "
+        "That is your quick league check-in. Which result surprised you? "
+        "Follow for more MLS scores and match updates."
     )
     long_script = (
-        f"Welcome to your MLS recap for {report_date}. "
-        f"{match_text} We are reporting verified final scores only in this version. "
-        "Goal scorers and standings will be added when we have confirmed access to those details. "
-        "Thanks for watching."
+        f"Welcome to the MLS Final Whistle for {report_date}. "
+        f"Let's get straight to the final scores. {match_text} "
+        "This recap includes completed matches confirmed by our results provider. "
+        "We are keeping this edition focused on verified scores rather than guessing at goal scorers "
+        "or standings implications. Check back for the next league roundup, and tell us which match "
+        "you want us to break down next."
     )
     return {
         "date": report_date,
@@ -194,11 +197,21 @@ async def create_narration(text: str, path: Path) -> None:
 
 def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    width, height = Image.open(image_path).size
+    # Gentle push-in plus a moving teal accent adds motion without unlicensed footage.
+    motion_filter = (
+        f"zoompan=z='min(zoom+0.0007,1.06)':"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d=1:s={width}x{height}:fps=25,"
+        f"drawbox=x='t*180':y={height-12}:w=150:h=6:"
+        "color=0x31e0b1@0.95:t=fill"
+    )
     cmd = [
         ffmpeg, "-y", "-loop", "1", "-framerate", "25", "-i", str(image_path),
         "-i", str(audio_path), "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-        "-c:a", "aac", "-b:a", "96k", "-pix_fmt", "yuv420p",
+        "-vf", motion_filter,
+        "-c:v", "libx264", "-preset", "ultrafast",
+        "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
         "-threads", "2", "-filter_threads", "1",
         "-shortest", "-movflags", "+faststart", str(output_path),
     ]
