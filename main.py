@@ -294,8 +294,8 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
     long_audio = assets / f"long_{date}.mp3"
     short_image = assets / f"short_{date}.jpg"
     long_image = assets / f"long_{date}.jpg"
-    short_video = output_dir / f"mls_short_{date}_v2.mp4"
-    long_video = output_dir / f"mls_recap_{date}_v2.mp4"
+    short_video = output_dir / f"mls_short_{date}_v3.mp4"
+    long_video = output_dir / f"mls_recap_{date}_v3.mp4"
     asyncio.run(create_narration(draft["short_script"], short_audio))
     asyncio.run(create_narration(draft["long_script"], long_audio))
     render_scoreboard(draft["matches"], date, short_image, True)
