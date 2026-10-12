@@ -305,7 +305,7 @@ def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
         "color=0x31e0b1@0.95:t=fill,"
         f"drawbox=x='mod(t*240\\,{width+180})-180':y={height-16}:w=180:h=8:"
         "color=0x31e0b1@0.95:t=fill,"
-        f"drawbox=x=0:y=0:w={width}:h=5:color=0x31e0b1@'0.55+0.4*sin(6*t)':t=fill"
+        f"drawbox=x=0:y=0:w={width}:h=5:color=0x31e0b1@0.85:t=fill"
     )
     cmd = [
         ffmpeg, "-y", "-loop", "1", "-framerate", "25", "-i", str(image_path),
