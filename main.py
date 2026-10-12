@@ -65,12 +65,12 @@ def fetch_yesterdays_results() -> list[dict]:
         data = [data]
     if not isinstance(data, list):
         raise ProviderError("Unexpected results format from Football Soccer API.")
+    # Match only the top-flight Major League Soccer competition. A substring
+    # check like "mls" also matches MLS NEXT Pro, which must never enter this recap.
+    official_mls_names = {"mls", "major league soccer"}
     return [
         match for match in data
-        if (
-            "mls" in str(match.get("league_name", "")).casefold()
-            or "major league soccer" in str(match.get("league_name", "")).casefold()
-        )
+        if str(match.get("league_name", "")).strip().casefold() in official_mls_names
     ]
 
 def build_match_summary(match: dict) -> dict:
