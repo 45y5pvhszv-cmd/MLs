@@ -57,9 +57,9 @@ def api_get(path: str, params: dict[str, str] | None = None) -> dict:
 
 
 def fetch_yesterdays_results() -> list[dict]:
-    # The free "today" endpoint can include recent results across UTC dates.
+    # The free "latest" endpoint returns recent settled results across UTC dates.
     # We filter each kickoff into the user's configured report timezone below.
-    payload = api_get("results/today", {"country": COUNTRY, "limit": "1000"})
+    payload = api_get("results/latest", {"country": COUNTRY, "limit": "1000"})
     data = payload.get("data", [])
     if isinstance(data, dict):
         data = [data]
