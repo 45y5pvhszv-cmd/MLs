@@ -162,24 +162,41 @@ def create_script(matches: list[dict], report_date: str) -> dict:
             "matches": [],
         }
 
-    lines = []
-    for m in completed:
-        lines.append(
-            f'{m["home_team"]} {m["home_score"]}, {m["away_team"]} {m["away_score"]}.'
+    def score_line(m: dict) -> str:
+        return f'{m["home_team"]}, {m["home_score"]}; {m["away_team"]}, {m["away_score"]}.'
+
+    # Put the hook first and vary the pacing, while sticking strictly to verified scores.
+    ranked = sorted(
+        completed,
+        key=lambda m: abs(int(m.get("home_score") or 0) - int(m.get("away_score") or 0)),
+    )
+    close_games = [m for m in ranked if abs(int(m.get("home_score") or 0) - int(m.get("away_score") or 0)) <= 1]
+    opener = (
+        f"We have {len(completed)} final { 'score' if len(completed) == 1 else 'scores' } from MLS. "
+        "Let's get into the results that shaped the night."
+    )
+    if close_games:
+        m = close_games[0]
+        opener = (
+            f"MLS delivered a tight finish: {m['home_team']} and {m['away_team']} were separated "
+            f"by just {abs(int(m.get('home_score') or 0) - int(m.get('away_score') or 0))} "
+            f"at the final whistle. Here are the results."
         )
+    lines = [score_line(m) for m in completed]
     match_text = " ".join(lines)
     short_script = (
-        f"MLS fans, here are the final scores for {report_date}. {match_text} "
-        "That is your quick league check-in. Which result surprised you? "
-        "Follow for more MLS scores and match updates."
+        f"MLS Final Whistle! {len(completed)} final results, coming right up. "
+        f"{match_text} That's the scoreboard. Which result matters most to your club? "
+        "Drop your take in the comments and follow for the next MLS roundup."
     )
     long_script = (
-        f"Welcome to the MLS Final Whistle for {report_date}. "
-        f"Let's get straight to the final scores. {match_text} "
-        "This recap includes completed matches confirmed by our results provider. "
-        "We are keeping this edition focused on verified scores rather than guessing at goal scorers "
-        "or standings implications. Check back for the next league roundup, and tell us which match "
-        "you want us to break down next."
+        f"Welcome to MLS Final Whistle, your fast, no-favoritism league roundup for {report_date}. "
+        f"{opener} {match_text} "
+        "A quick note on the numbers: these are verified final scores, not a highlights package, "
+        "and we're not going to invent scorers or table implications that we cannot confirm. "
+        "The result to debate tonight is the one that surprised you most. Did your club get the job done, "
+        "or did the scoreboard leave questions to answer? Tell us in the comments, and subscribe for "
+        "the next MLS check-in."
     )
     return {
         "date": report_date,
@@ -209,9 +226,15 @@ def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertica
     width, height = (720, 1280) if vertical else (1280, 720)
     image = Image.new("RGB", (width, height), "#06101f")
     draw = ImageDraw.Draw(image)
-    # Neon diagonal bands and stadium-style light panels are original graphic assets.
-    draw.polygon([(0, 0), (int(width*.68), 0), (int(width*.48), int(height*.18)), (0, int(height*.28))], fill="#0b2840")
-    draw.polygon([(width, int(height*.45)), (width, height), (int(width*.58), height), (int(width*.8), int(height*.74))], fill="#0b263b")
+    # Broadcast-inspired backdrop: floodlight beams, layered pitch panels and an original neon brand.
+    draw.polygon([(0,0),(int(width*.82),0),(int(width*.57),int(height*.34)),(0,int(height*.25))], fill="#102f49")
+    draw.polygon([(width,0),(width,int(height*.32)),(int(width*.72),int(height*.52)),(int(width*.88),0)], fill="#0a1c2d")
+    draw.polygon([(0,int(height*.68)),(int(width*.34),int(height*.56)),(int(width*.63),height),(0,height)], fill="#0a2638")
+    draw.polygon([(width,int(height*.58)),(width,height),(int(width*.48),height),(int(width*.76),int(height*.74))], fill="#10354a")
+    # Stylized floodlights.
+    for lx, ly in [(int(width*.78),int(height*.08)),(int(width*.9),int(height*.13))]:
+        for k in range(4):
+            draw.ellipse((lx+k*int(width*.014),ly,lx+k*int(width*.014)+int(width*.008),ly+int(width*.008)), fill="#d9fff7")
     draw.rectangle((0, 0, int(width*.018), height), fill="#31e0b1")
     margin = int(width * 0.065)
     title_font = load_font(int(width * (0.066 if vertical else 0.052)), True)
@@ -219,26 +242,28 @@ def render_scoreboard(matches: list[dict], report_date: str, path: Path, vertica
     team_font = load_font(int(width * (0.027 if vertical else 0.022)), True)
     score_font = load_font(int(width * (0.043 if vertical else 0.036)), True)
     small_font = load_font(int(width * 0.017), True)
-    draw.text((margin, int(height*.055)), "THE MLS", font=title_font, fill="#FFFFFF", stroke_width=1, stroke_fill="#31e0b1")
+    draw.text((margin, int(height*.055)), "MLS", font=title_font, fill="#FFFFFF", stroke_width=2, stroke_fill="#31e0b1")
     draw.text((margin, int(height*.055)+int(width*.075)), "FINAL WHISTLE  /  " + report_date, font=sub_font, fill="#31e0b1")
-    # Accent divider gives the card a sports broadcast hierarchy.
+    draw.text((margin, int(height*.145)), "THE NIGHT IN SCORES", font=sub_font, fill="#FFFFFF")
     draw.rounded_rectangle((margin, int(height*.18), width-margin, int(height*.187)), radius=5, fill="#31e0b1")
     y = int(height * (0.225 if vertical else 0.235))
     max_rows = min(len(matches), 8 if vertical else 5)
     row_h = int(height * (0.078 if vertical else 0.12))
     for idx, match in enumerate(matches[:max_rows], start=1):
         bottom = y + row_h - int(height*.012)
-        draw.rounded_rectangle((margin, y, width-margin, bottom), radius=22, fill="#10283e", outline="#24475d", width=2)
+        draw.rounded_rectangle((margin+5, y+5, width-margin+5, bottom+5), radius=22, fill="#020a12")
+        draw.rounded_rectangle((margin, y, width-margin, bottom), radius=22, fill="#10283e", outline="#31e0b1" if idx == 1 else "#426b83", width=3)
         draw.rounded_rectangle((margin, y, margin+int(width*.012), bottom), radius=5, fill="#31e0b1" if idx == 1 else "#426b83")
         left = margin + int(width*.032)
         draw.text((left, y+int(row_h*.13)), str(match.get("home_team","Home"))[:24], font=team_font, fill="#FFFFFF")
-        draw.text((left, y+int(row_h*.56)), str(match.get("away_team","Away"))[:24], font=team_font, fill="#a8bdce")
+        draw.text((left, y+int(row_h*.56)), str(match.get("away_team","Away"))[:24], font=team_font, fill="#b9cddd")
         score = f'{match.get("home_score","-")}  -  {match.get("away_score","-")}'
         box = draw.textbbox((0,0), score, font=score_font)
-        draw.text((width-margin-int(width*.035)-(box[2]-box[0]), y+int(row_h*.31)), score, font=score_font, fill="#31e0b1")
+        draw.rounded_rectangle((width-margin-int(width*.30), y+int(row_h*.18), width-margin-int(width*.025), y+int(row_h*.83)), radius=12, fill="#071724", outline="#31e0b1", width=2)
+        draw.text((width-margin-int(width*.035)-(box[2]-box[0]), y+int(row_h*.31),), score, font=score_font, fill="#31e0b1")
         y += row_h
     footer_y = height - margin*1.8
-    draw.text((margin, footer_y), "SCORES. STORIES. SOCCER.", font=small_font, fill="#FFFFFF")
+    draw.text((margin, footer_y), "SCORES  /  STORIES  /  SOCCER", font=small_font, fill="#FFFFFF")
     draw.text((margin, footer_y+int(height*.025)), "Independent MLS coverage  •  Verified final scores", font=small_font, fill="#a8bdce")
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, quality=95)
