@@ -132,7 +132,7 @@ def create_script(matches: list[dict], report_date: str) -> dict:
     lines = []
     for m in completed:
         lines.append(
-            f'{m["away_team"]} {m["away_score"]}, {m["home_team"]} {m["home_score"]}.'
+            f'{m["home_team"]} {m["home_score"]}, {m["away_team"]} {m["away_score"]}.'
         )
         if m["scorers"]:
             lines.append("Goal scorers: " + "; ".join(m["scorers"]) + ".")
