@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -304,10 +305,11 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
     return [str(short_video), str(long_video)]
 
 
-def main() -> int:
-    # The recap follows the configured local calendar date, not UTC midnight.
+def main(report_date_override: str | None = None) -> int:
+    # The scheduled run summarizes yesterday's local MLS slate. Explicit REPORT_DATE
+    # remains available for manual testing, and dates are always filtered locally.
     local_today = datetime.now(ZoneInfo(TIMEZONE)).date().isoformat()
-    report_date = os.getenv("REPORT_DATE", local_today)
+    report_date = os.getenv("REPORT_DATE") or report_date_override or local_today
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"MLS recap preparation | report date: {report_date} | source: ESPN scoreboard with fallback")
 
@@ -383,9 +385,28 @@ def main() -> int:
     return 0
 
 
+def scheduled_daily_runner() -> None:
+    """Run the prior local calendar day's recap every morning at 5:00 AM."""
+    zone = ZoneInfo(TIMEZONE)
+    while True:
+        now = datetime.now(zone)
+        next_run = now.replace(hour=5, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        wait_seconds = max(1, (next_run - now).total_seconds())
+        print(f"Next automatic MLS recap scheduled for {next_run.isoformat()}")
+        time.sleep(wait_seconds)
+        report_date = (datetime.now(zone).date() - timedelta(days=1)).isoformat()
+        print(f"Starting scheduled MLS recap for {report_date}")
+        try:
+            main(report_date)
+        except Exception as exc:
+            print(f"SCHEDULED RECAP FAILED for {report_date}: {exc}", file=sys.stderr)
+
+
 if __name__ == "__main__":
-    # Start the web server before API calls, AI narration, and video rendering.
-    # Otherwise Railway's health check can time out while FFmpeg/TTS is working.
+    # Serve generated files continuously; generate yesterday's recap at startup,
+    # then repeat every morning. A no-game day produces no video files.
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
     OUTPUT_DIR = OUTPUT_DIR.resolve()
@@ -393,7 +414,11 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8080"))
     handler = partial(SimpleHTTPRequestHandler, directory=str(OUTPUT_DIR))
     server = ThreadingHTTPServer(("0.0.0.0", port), handler)
-    worker = threading.Thread(target=main, name="mls-recap-worker", daemon=True)
+    zone = ZoneInfo(TIMEZONE)
+    yesterday = (datetime.now(zone).date() - timedelta(days=1)).isoformat()
+    worker = threading.Thread(target=main, args=(yesterday,), name="mls-recap-worker", daemon=True)
+    scheduler = threading.Thread(target=scheduled_daily_runner, name="mls-daily-scheduler", daemon=True)
     worker.start()
-    print(f"Video file server ready on port {port}; recap generation runs in background")
+    scheduler.start()
+    print(f"Video file server ready on port {port}; daily recap generation is enabled")
     server.serve_forever()
