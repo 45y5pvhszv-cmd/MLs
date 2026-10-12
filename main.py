@@ -385,8 +385,8 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
     date = draft["date"]
     assets = output_dir / "assets" / date
     assets.mkdir(parents=True, exist_ok=True)
-    short_video = output_dir / f"mls_short_{date}_v4.mp4"
-    long_video = output_dir / f"mls_recap_{date}_v4.mp4"
+    short_video = output_dir / f"mls_short_{date}_v5.mp4"
+    long_video = output_dir / f"mls_recap_{date}_v5.mp4"
     matches = draft["matches"]
     # Shorts stay focused: lead with the closest games and cap the rundown at four.
     ranked = sorted(matches, key=lambda m: abs(int(m.get("home_score") or 0)-int(m.get("away_score") or 0)))
@@ -400,7 +400,7 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
         asyncio.run(create_narration(narration,audio_path))
         parts.append((image_path,audio_path))
 
-        hook_match = short_matches[0] if short_matches else matches[0]
+    hook_match = short_matches[0] if short_matches else matches[0]
     hook_gap = abs(int(hook_match.get("home_score") or 0) - int(hook_match.get("away_score") or 0))
     hook_line = f"{hook_match['home_team']} and {hook_match['away_team']} finished {hook_match['home_score']} to {hook_match['away_score']}."
     if hook_gap == 0:
