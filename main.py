@@ -11,6 +11,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -301,15 +303,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    exit_code = main()
-    if exit_code == 0:
-        # Keep the service alive and make generated drafts available for review.
-        # Railway's persistent volume is mounted at /data; OUTPUT_DIR points there.
-        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    # Start the web server before API calls, AI narration, and video rendering.
+    # Otherwise Railway's health check can time out while FFmpeg/TTS is working.
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-        os.chdir(OUTPUT_DIR)
-        port = int(os.getenv("PORT", "8080"))
-        server = ThreadingHTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
-        print(f"Video files available on the service HTTP port {port}")
-        server.serve_forever()
-    raise SystemExit(exit_code)
+    OUTPUT_DIR = OUTPUT_DIR.resolve()
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    port = int(os.getenv("PORT", "8080"))
+    handler = partial(SimpleHTTPRequestHandler, directory=str(OUTPUT_DIR))
+    server = ThreadingHTTPServer(("0.0.0.0", port), handler)
+    worker = threading.Thread(target=main, name="mls-recap-worker", daemon=True)
+    worker.start()
+    print(f"Video file server ready on port {port}; recap generation runs in background")
+    server.serve_forever()
