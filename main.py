@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -127,10 +127,9 @@ def create_script(matches: list[dict], report_date: str) -> dict:
 
 
 def main() -> int:
-    local_now = datetime.now(ZoneInfo(TIMEZONE))
-    report_date = os.getenv(
-        "REPORT_DATE", (local_now.date() - timedelta(days=1)).isoformat()
-    )
+    # Provider endpoint returns the previous UTC day, so label the report in UTC.
+    utc_yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    report_date = os.getenv("REPORT_DATE", utc_yesterday)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"MLS recap preparation | report date: {report_date} | source: Football Soccer API")
 
