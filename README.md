@@ -8,9 +8,7 @@ The first pipeline stage can retrieve MLS match data and create a JSON file with
 
 ## Data provider setup
 
-This version uses API-Football (API-Sports) for fixtures, goal events, and standings. Its current public pricing page lists a free tier with 100 requests/day and includes fixtures, standings, and events; check current coverage, terms, and commercial-use permissions before relying on it: https://www.api-football.com/pricing/ and https://www.api-football.com/coverage.
-
-In Railway, add the provider key as a service variable named `MLS_DATA_API_KEY`. Never put API keys in GitHub or send them in chat. Defaults are MLS league ID 253, current calendar year as season, and America/Chicago as the report timezone. These can be overridden with `MLS_LEAGUE_ID`, `MLS_SEASON`, and `REPORT_TIMEZONE`.
+This version uses Football Soccer API's free `/v1/matches` endpoint for recent match scores. The key must be stored in Railway as `FOOTBALL_SOCCER_API_KEY`. The code queries the requested report date and filters returned USA matches for MLS / Major League Soccer. Provider docs: https://footballsoccerapi.com/documentation/matches. The free endpoint does not guarantee goal-event details or full standings; those are not invented in the script. Defaults use America/Chicago and the previous local calendar date; set `REPORT_DATE=YYYY-MM-DD` to test a date.
 
 ## Run locally
 
@@ -21,7 +19,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Set `REPORT_DATE=YYYY-MM-DD` to test a specific date. Output is written to `output/mls_recap_YYYY-MM-DD.json`. The program stops safely if the data key is missing or the provider returns an error.
+Output is written to `output/mls_recap_YYYY-MM-DD.json`. The program stops safely if the data key is missing or the provider returns an error.
 
 ## Still to build
 
