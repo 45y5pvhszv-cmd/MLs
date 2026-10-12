@@ -293,13 +293,19 @@ async def create_narration(text: str, path: Path) -> None:
 def render_mp4(image_path: Path, audio_path: Path, output_path: Path) -> None:
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     width, height = Image.open(image_path).size
-    # Gentle push-in plus a moving teal accent adds motion without unlicensed footage.
+    # Broadcast-style motion: steady push-in, moving scan bars, a sweeping accent,
+    # and a pulsing top rail. All elements are original graphics; no match footage is used.
     motion_filter = (
-        f"zoompan=z='min(zoom+0.0007,1.06)':"
+        f"zoompan=z='min(zoom+0.00055,1.045)':"
         f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
         f"d=1:s={width}x{height}:fps=25,"
-        f"drawbox=x='t*180':y={height-12}:w=150:h=6:"
-        "color=0x31e0b1@0.95:t=fill"
+        f"drawbox=x='mod(t*520\\,{width+260})-260':y=0:w=260:h={height}:"
+        "color=0x31e0b1@0.045:t=fill,"
+        f"drawbox=x='mod(t*260\\,{width+220})-220':y={int(height*0.19)}:w=220:h=4:"
+        "color=0x31e0b1@0.95:t=fill,"
+        f"drawbox=x='mod(t*240\\,{width+180})-180':y={height-16}:w=180:h=8:"
+        "color=0x31e0b1@0.95:t=fill,"
+        f"drawbox=x=0:y=0:w={width}:h=5:color=0x31e0b1@'0.55+0.4*sin(6*t)':t=fill"
     )
     cmd = [
         ffmpeg, "-y", "-loop", "1", "-framerate", "25", "-i", str(image_path),
@@ -394,13 +400,22 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
         asyncio.run(create_narration(narration,audio_path))
         parts.append((image_path,audio_path))
 
-    add_scene(short_parts,"short_intro","THE RESULTS YOU NEED",f"MLS Final Whistle! Here are four results to know from {date}.",None,True)
+        hook_match = short_matches[0] if short_matches else matches[0]
+    hook_gap = abs(int(hook_match.get("home_score") or 0) - int(hook_match.get("away_score") or 0))
+    hook_line = f"{hook_match['home_team']} and {hook_match['away_team']} finished {hook_match['home_score']} to {hook_match['away_score']}."
+    if hook_gap == 0:
+        hook = f"Straight into the tightest finish: {hook_line} Here are the verified MLS finals."
+    elif hook_gap == 1:
+        hook = f"A one-goal finish leads the MLS roundup: {hook_line} Let's hit the rest of the scoreboard."
+    else:
+        hook = f"Here is your MLS scoreboard for {date}, starting with {hook_line}"
+    add_scene(short_parts,"short_intro","START WITH THE CLOSEST FINISH",hook,None,True)
     for i,m in enumerate(short_matches,1):
         score=f'{m["home_team"]} {m["home_score"]}, {m["away_team"]} {m["away_score"]}.'
         add_scene(short_parts,f"short_match_{i}",f'{m["home_team"]} vs {m["away_team"]}',score,m,True)
     add_scene(short_parts,"short_outro","YOUR TAKE?", "Which result surprised you most? Tell us below and follow for the next MLS roundup.",None,True)
 
-    add_scene(long_parts,"long_intro","THE FULL MLS RUNDOWN",f"Welcome to MLS Final Whistle for {date}. We are breaking down the final scores one match at a time.",None,False)
+    add_scene(long_parts,"long_intro","THE FULL MLS RESULTS",f"Welcome to MLS Final Whistle for {date}. This is a verified results rundown, match by match, with no invented scorers or claims.",None,False)
     for i,m in enumerate(matches,1):
         gap=abs(int(m.get("home_score") or 0)-int(m.get("away_score") or 0))
         if gap == 0:
@@ -413,7 +428,7 @@ def render_videos(draft: dict, output_dir: Path) -> list[str]:
             angle="The final score gives us the result, without guessing at events we cannot verify."
         narration=f"Match {i}. {m['home_team']} {m['home_score']}, {m['away_team']} {m['away_score']}. {angle}"
         add_scene(long_parts,f"long_match_{i}",f'{m["home_team"]} vs {m["away_team"]}',narration,m,False)
-    add_scene(long_parts,"long_outro","JOIN THE CONVERSATION","Which result will matter most in the playoff race? Share your take, and subscribe for the next MLS Final Whistle.",None,False)
+    add_scene(long_parts,"long_outro","JOIN THE CONVERSATION","Which result stood out to you? Share your take, and subscribe for the next MLS Final Whistle. This rundown sticks to verified final scores rather than guessing at playoff implications.",None,False)
     render_scene_sequence(short_parts,short_video,assets)
     render_scene_sequence(long_parts,long_video,assets)
     return [str(short_video),str(long_video)]
