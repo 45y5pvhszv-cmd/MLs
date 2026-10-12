@@ -269,4 +269,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    if exit_code == 0:
+        # Keep the service alive and make generated drafts available for review.
+        # Railway's persistent volume is mounted at /data; OUTPUT_DIR points there.
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+        os.chdir(OUTPUT_DIR)
+        port = int(os.getenv("PORT", "8080"))
+        server = ThreadingHTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
+        print(f"Video files available on the service HTTP port {port}")
+        server.serve_forever()
+    raise SystemExit(exit_code)
